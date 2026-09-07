@@ -1,0 +1,31 @@
+{
+  "name": "AI Proposal Generation Module",
+  "nodes": [
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You craft direct, non-generic Upwork proposals for AI automation projects. Open with a technical hook, state past experience with metrics, offer a 3-step solution, and end with a soft call-to-action."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.openAiPrompt }}"
+            }
+          ]
+        }
+      },
+      "name": "OpenAI Generator",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [ 200, 200 ]
+    }
+  ],
+  "connections": {}
+}

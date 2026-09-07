@@ -1,0 +1,25 @@
+{
+  "name": "upwork-ai-proposal-automation",
+  "version": "2.0.0",
+  "description": "Production-grade Upwork AI Opportunity Intelligence & Proposal Automation System",
+  "main": "src/cli.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/cli.js",
+    "analyze": "node src/cli.js --file examples/sample-job.json",
+    "test": "node src/cli.js --test"
+  },
+  "keywords": [
+    "upwork",
+    "ai",
+    "n8n",
+    "proposal-automation",
+    "openai",
+    "opportunity-intelligence",
+    "workflow-automation"
+  ],
+  "author": "Rohan Majeed",
+  "license": "MIT",
+  "devDependencies": {},
+  "dependencies": {}
+}

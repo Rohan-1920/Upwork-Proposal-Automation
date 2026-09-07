@@ -1,0 +1,30 @@
+{
+  "name": "Job Intake & Data Normalization Module",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "job-intake",
+        "options": {}
+      },
+      "name": "Webhook Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [ 100, 200 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nreturn [{\n  json: {\n    jobTitle: item.title || item.jobTitle || 'Untitled',\n    jobUrl: item.url || item.link || '',\n    jobDescription: item.description || item.content || '',\n    budget: item.budget || 'Not specified',\n    clientRating: item.clientRating || null,\n    clientSpent: item.clientSpent || 0,\n    skillsRequired: item.skills || ''\n  }\n}];"
+      },
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 340, 200 ]
+    }
+  ],
+  "connections": {
+    "Webhook Intake": {
+      "main": [ [ { "node": "Normalize Input", "type": "main", "index": 0 } ] ]
+    }
+  }
+}

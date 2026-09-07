@@ -1,0 +1,161 @@
+{
+  "name": "Upwork AI Opportunity Intelligence & Proposal Automation Pipeline (v2.0)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 3
+            }
+          ]
+        }
+      },
+      "id": "trigger-schedule",
+      "name": "Schedule Trigger (Every 3m)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [ -300, 100 ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.VOLLNA_RSS_URL || 'https://www.vollna.com/rss/sample' }}",
+        "options": {}
+      },
+      "id": "rss-reader",
+      "name": "RSS Feed Reader",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [ -80, 100 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputs = $input.all();\n\nfunction extractBudget(text) {\n  if (!text) return { type: 'unknown', raw: 'Not specified', amount: 0 };\n  const fixed = text.match(/Budget:\\s*\\$?([\\d,]+)/i) || text.match(/\\(\\$?([\\d,]+)\\)$/);\n  if (fixed) {\n    const val = parseInt(fixed[1].replace(/,/g, ''), 10);\n    return { type: 'fixed', raw: `$${val}`, amount: val };\n  }\n  const hourly = text.match(/\\$([\\d.]+)\\s*\\/hr/i);\n  if (hourly) {\n    const val = parseFloat(hourly[1]);\n    return { type: 'hourly', raw: `$${val}/hr`, amount: val };\n  }\n  return { type: 'unknown', raw: 'Not specified', amount: 0 };\n}\n\nfunction extractClient(text) {\n  const ratingMatch = text ? text.match(/([\\d.]+)\\s*of\\s*5/i) : null;\n  const spentMatch = text ? text.match(/\\$([\\d,]+)\\+?\\s*spent/i) : null;\n  return {\n    rating: ratingMatch ? parseFloat(ratingMatch[1]) : null,\n    spent: spentMatch ? parseInt(spentMatch[1].replace(/,/g, ''), 10) : 0,\n    paymentVerified: /payment\\s+verified/i.test(text || '')\n  };\n}\n\nreturn inputs.map(item => {\n  const json = item.json;\n  const rawDesc = json.content || json.contentSnippet || json.description || '';\n  const cleanDesc = rawDesc.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').trim();\n  const url = json.link || json.url || '';\n  const jobIdMatch = url.match(/~([a-zA-Z0-9]+)/);\n  const jobId = jobIdMatch ? jobIdMatch[1] : (json.guid || `job_${Math.random().toString(36).substring(7)}`);\n\n  return {\n    json: {\n      jobId,\n      jobTitle: json.title || 'Untitled Upwork Opportunity',\n      jobUrl: url,\n      jobDescription: cleanDesc,\n      postedAt: json.pubDate || new Date().toISOString(),\n      budget: extractBudget(cleanDesc),\n      client: extractClient(cleanDesc),\n      skillsRequired: json.categories || json.skills || ''\n    }\n  };\n});"
+      },
+      "id": "data-parser",
+      "name": "Parse & Normalize Job Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 140, 100 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nconst CORE_SKILLS = ['n8n', 'automation', 'workflow', 'ai', 'gpt', 'openai', 'llm', 'api integration', 'python', 'javascript', 'airtable'];\nconst text = `${item.jobTitle} ${item.jobDescription} ${item.skillsRequired}`.toLowerCase();\n\nconst matchedSkills = CORE_SKILLS.filter(s => text.includes(s));\n\n// 1. Skill Score (0-30)\nlet skillScore = matchedSkills.length >= 4 ? 30 : matchedSkills.length * 7;\n\n// 2. Client Score (0-25)\nlet clientScore = 10;\nif (item.client.rating >= 4.8) clientScore += 10;\nelse if (item.client.rating >= 4.5) clientScore += 7;\nif (item.client.spent >= 10000) clientScore += 5;\n\n// 3. Budget Score (0-20)\nlet budgetScore = item.budget.amount >= 500 || item.budget.type === 'hourly' ? 18 : 10;\n\n// 4. Clarity & Strategic (0-25)\nlet clarityScore = item.jobDescription.length > 400 ? 15 : 8;\nlet strategicScore = text.includes('n8n') || text.includes('openai') ? 10 : 5;\n\nconst totalScore = Math.min(100, skillScore + clientScore + budgetScore + clarityScore + strategicScore);\n\nlet priority = 'Ignore';
+if (totalScore >= 85) priority = 'High Priority';\nelse if (totalScore >= 70) priority = 'Worth Reviewing';\nelse if (totalScore >= 50) priority = 'Low Priority';\n\nreturn [{\n  json: {\n    ...item,\n    matchedSkills,\n    totalScore,\n    priority\n  }\n}];"
+      },
+      "id": "intelligence-scorer",
+      "name": "0-100 Opportunity Intelligence Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 380, 100 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.totalScore }}",
+              "operation": "largerEqual",
+              "value2": 70
+            }
+          ]
+        }
+      },
+      "id": "score-filter",
+      "name": "Is Score >= 70?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [ 620, 100 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const job = $input.first().json;\n\nconst prompt = `Write a concise, high-converting Upwork proposal for:\nJOB: ${job.jobTitle}\nBUDGET: ${job.budget.raw}\nDESCRIPTION:\n${job.jobDescription}\n\nSTRICT RULES:\n- No generic greetings.\n- Hook with a specific technical detail.\n- Highlight past experience building fault-tolerant n8n workflows handling 20K+ daily operations.\n- Offer a clear 3-step solution.\n- Soft CTA at the end. Keep under 180 words.`;\n\nreturn [{\n  json: {\n    ...job,\n    openAiPrompt: prompt\n  }\n}];"
+      },
+      "id": "prompt-builder",
+      "name": "Build OpenAI Proposal Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 860, 20 ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "user",
+              "content": "={{ $json.openAiPrompt }}"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 400
+        }
+      },
+      "id": "openai-proposal-node",
+      "name": "OpenAI: Generate Proposal",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [ 1100, 20 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst job = $('0-100 Opportunity Intelligence Engine').first().json;\nconst proposalText = input.text || input.message?.content || input.output?.[0]?.content?.[0]?.text || 'Proposal generated.';\n\nconst slackMsg = `🚀 *NEW HIGH-MATCH UPWORK OPPORTUNITY*\n\n📌 *Title:* ${job.jobTitle}\n📊 *Score:* ${job.totalScore}/100 ([ *${job.priority}* ])\n💰 *Budget:* ${job.budget.raw}\n⭐ *Client Rating:* ${job.client.rating || 'New Client'}\n🛠️ *Matched Skills:* ${job.matchedSkills.join(', ')}\n🔗 *Link:* ${job.jobUrl}\n\n📝 *AI Generated Proposal Draft:*\n\`\`\`\n${proposalText}\n\`\`\`\n\n👤 *Human Review Action Required:* [ Approve & Submit ] | [ Edit Proposal ] | [ Reject ]`;\n\nreturn [{ json: { ...job, proposalText, slackMsg } }];"
+      },
+      "id": "slack-formatter",
+      "name": "Build Slack Notification & Review Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 1340, 20 ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C09DV2HQ2M9"
+        },
+        "text": "={{ $json.slackMsg }}"
+      },
+      "id": "slack-notify",
+      "name": "Send Slack Human Review Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [ 1580, 20 ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (Every 3m)": {
+      "main": [ [ { "node": "RSS Feed Reader", "type": "main", "index": 0 } ] ]
+    },
+    "RSS Feed Reader": {
+      "main": [ [ { "node": "Parse & Normalize Job Data", "type": "main", "index": 0 } ] ]
+    },
+    "Parse & Normalize Job Data": {
+      "main": [ [ { "node": "0-100 Opportunity Intelligence Engine", "type": "main", "index": 0 } ] ]
+    },
+    "0-100 Opportunity Intelligence Engine": {
+      "main": [ [ { "node": "Is Score >= 70?", "type": "main", "index": 0 } ] ]
+    },
+    "Is Score >= 70?": {
+      "main": [
+        [ { "node": "Build OpenAI Proposal Prompt", "type": "main", "index": 0 } ],
+        []
+      ]
+    },
+    "Build OpenAI Proposal Prompt": {
+      "main": [ [ { "node": "OpenAI: Generate Proposal", "type": "main", "index": 0 } ] ]
+    },
+    "OpenAI: Generate Proposal": {
+      "main": [ [ { "node": "Build Slack Notification & Review Payload", "type": "main", "index": 0 } ] ]
+    },
+    "Build Slack Notification & Review Payload": {
+      "main": [ [ { "node": "Send Slack Human Review Alert", "type": "main", "index": 0 } ] ]
+    }
+  }
+}

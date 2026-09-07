@@ -1,0 +1,15 @@
+{
+  "name": "0-100 Opportunity Intelligence Scoring Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\n// 5-Factor Weighted Score Model\nconst skillScore = 30;\nconst clientScore = 20;\nconst budgetScore = 20;\nconst clarityScore = 15;\nconst strategicScore = 10;\n\nconst totalScore = skillScore + clientScore + budgetScore + clarityScore + strategicScore;\n\nreturn [{\n  json: {\n    ...item,\n    totalScore,\n    priority: totalScore >= 85 ? 'High Priority' : (totalScore >= 70 ? 'Worth Reviewing' : 'Low Priority')\n  }\n}];"
+      },
+      "name": "Compute 5-Factor Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 200, 200 ]
+    }
+  ],
+  "connections": {}
+}
